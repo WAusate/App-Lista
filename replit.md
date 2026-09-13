@@ -1,6 +1,6 @@
-# [Project name]
+# Compra em Casa
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+PWA mobile-first em português do Brasil para controlar compras domésticas em uma casa compartilhada.
 
 ## Run & Operate
 
@@ -22,15 +22,29 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/compra-em-casa/src/App.tsx` — shell, rotas e fluxos da interface.
+- `artifacts/compra-em-casa/src/index.css` — tokens visuais, fontes e animações.
+- `artifacts/compra-em-casa/public/manifest.webmanifest` e `sw.js` — instalação e cache PWA.
+- `lib/api-spec/openapi.yaml` — contrato único da API; regenere os clientes após alterações.
+- `lib/db/src/schema/` — tabelas PostgreSQL do produto.
+- `artifacts/api-server/src/lib/household-state.ts` — estado agregado da casa e catálogo inicial.
+- `artifacts/api-server/src/routes/` — rotas de casas, itens, lista e notas fiscais.
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- O código da casa é a identidade compartilhada enviada em `X-House-Code`; não há login obrigatório.
+- PostgreSQL é a fonte de verdade quando a casa está conectada; o navegador guarda apenas o código da casa e o cache do PWA.
+- O cliente gerado recebe `X-House-Code` via `request.headers` nas opções dos hooks de mutação.
+- IDs de catálogo são prefixados por casa na criação para impedir colisões entre famílias.
+- Importação fiscal salva a URL mesmo quando a página não pode ser consultada ou só retorna dados parciais.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- Comprar: lista atual, progresso, filtros, quantidades, marcação de compra e reinício da lista.
+- Meus itens: catálogo pesquisável, cadastro, edição, exclusão e adição à lista atual.
+- Histórico: registros por data, preço, mercado e origem (lista ou nota fiscal).
+- Casa compartilhada: criar/entrar por código `CASA-XXXX` e sincronizar a mesma lista em dois dispositivos.
+- Nota fiscal: URL HTTP/HTTPS validada, leitura heurística de mercado/data/total/produtos e câmera com BarcodeDetector quando disponível.
 
 ## User preferences
 

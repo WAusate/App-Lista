@@ -1,0 +1,19 @@
+{
+  "name": "Compra em Casa",
+  "short_name": "Compra em Casa",
+  "description": "Lista de compras compartilhada para a casa.",
+  "lang": "pt-BR",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f7f8f2",
+  "theme_color": "#2f5c4f",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+- [Frontend API house headers](frontend-api-house-headers.md) — household mutations attach `X-House-Code` through generated hook request options.

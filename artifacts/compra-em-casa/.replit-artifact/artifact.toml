@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Compra em Casa"
+description = "PWA mobile-first em português do Brasil para controlar compras domésticas, compartilhar uma casa por código, manter histórico e importar notas fiscais por QR Code."
+version = "1.0.0"
+id = "artifacts/compra-em-casa"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18269
+
+[services.development]
+run = "pnpm --filter @workspace/compra-em-casa run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/compra-em-casa", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/compra-em-casa/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18269"
+BASE_PATH = "/"

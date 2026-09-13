@@ -3,20 +3,25 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: API for Compra em Casa
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: households
+    description: Shared household operations
+  - name: items
+    description: Catalog and shopping list operations
+  - name: receipts
+    description: Fiscal receipt operations
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +29,437 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /households:
+    post:
+      operationId: createHousehold
+      tags: [households]
+      summary: Create a shared household
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HouseholdCreateInput"
+      responses:
+        "201":
+          description: Household created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseholdState"
+  /households/join:
+    post:
+      operationId: joinHousehold
+      tags: [households]
+      summary: Join a household by code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HouseholdJoinInput"
+      responses:
+        "200":
+          description: Household state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseholdState"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /households/{code}:
+    get:
+      operationId: getHousehold
+      tags: [households]
+      summary: Get the complete state of a household
+      parameters:
+        - $ref: "#/components/parameters/HouseCode"
+      responses:
+        "200":
+          description: Household state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseholdState"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /items:
+    post:
+      operationId: createItem
+      tags: [items]
+      summary: Create a catalog item and add it to the current list
+      parameters:
+        - $ref: "#/components/parameters/HouseHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogItemInput"
+      responses:
+        "201":
+          description: Updated household state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseholdState"
+  /items/{id}:
+    put:
+      operationId: updateItem
+      tags: [items]
+      summary: Update a catalog item
+      parameters:
+        - $ref: "#/components/parameters/HouseHeader"
+        - $ref: "#/components/parameters/ItemId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CatalogItemInput"
+      responses:
+        "200":
+          description: Updated household state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseholdState"
+    delete:
+      operationId: deleteItem
+      tags: [items]
+      summary: Delete a catalog item and its open list entry
+      parameters:
+        - $ref: "#/components/parameters/HouseHeader"
+        - $ref: "#/components/parameters/ItemId"
+      responses:
+        "200":
+          description: Updated household state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseholdState"
+  /list/items:
+    post:
+      operationId: addListItem
+      tags: [items]
+      summary: Add an existing catalog item to the current list
+      parameters:
+        - $ref: "#/components/parameters/HouseHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ListItemInput"
+      responses:
+        "200":
+          description: Updated household state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseholdState"
+  /list/items/{id}:
+    put:
+      operationId: updateListItem
+      tags: [items]
+      summary: Update list quantity or purchased status
+      parameters:
+        - $ref: "#/components/parameters/HouseHeader"
+        - $ref: "#/components/parameters/ListItemId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ListItemUpdate"
+      responses:
+        "200":
+          description: Updated household state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseholdState"
+    delete:
+      operationId: deleteListItem
+      tags: [items]
+      summary: Remove an item from the current list
+      parameters:
+        - $ref: "#/components/parameters/HouseHeader"
+        - $ref: "#/components/parameters/ListItemId"
+      responses:
+        "200":
+          description: Updated household state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseholdState"
+  /list/clear-bought:
+    post:
+      operationId: clearBought
+      tags: [items]
+      summary: Remove purchased items from the current list
+      parameters:
+        - $ref: "#/components/parameters/HouseHeader"
+      responses:
+        "200":
+          description: Updated household state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseholdState"
+  /list/reset:
+    post:
+      operationId: resetList
+      tags: [items]
+      summary: Recreate the list from the catalog
+      parameters:
+        - $ref: "#/components/parameters/HouseHeader"
+      responses:
+        "200":
+          description: Updated household state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HouseholdState"
+  /receipts/resolve:
+    post:
+      operationId: resolveReceipt
+      tags: [receipts]
+      summary: Import a fiscal receipt from its QR URL
+      parameters:
+        - $ref: "#/components/parameters/HouseHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReceiptInput"
+      responses:
+        "200":
+          description: Receipt import result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReceiptResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
 components:
+  parameters:
+    HouseHeader:
+      name: X-House-Code
+      in: header
+      required: true
+      schema:
+        type: string
+        pattern: "^CASA-[A-Z0-9]{4}$"
+    HouseCode:
+      name: code
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^CASA-[A-Z0-9]{4}$"
+    ItemId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    ListItemId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
   schemas:
     HealthStatus:
       type: object
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+    HouseholdCreateInput:
+      type: object
+      properties:
+        catalog:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogItemInput"
+        list:
+          type: array
+          items:
+            $ref: "#/components/schemas/ListItemInput"
+    HouseholdJoinInput:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+          pattern: "^CASA-[A-Z0-9]{4}$"
+    CatalogItemInput:
+      type: object
+      required: [name, category, emoji, defaultQty, unit]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          minLength: 1
+        category:
+          type: string
+          minLength: 1
+        emoji:
+          type: string
+          minLength: 1
+        defaultQty:
+          type: integer
+          minimum: 1
+        unit:
+          type: string
+          minLength: 1
+        note:
+          type: string
+    ListItemInput:
+      type: object
+      required: [itemId]
+      properties:
+        itemId:
+          type: string
+        quantity:
+          type: integer
+          minimum: 1
+    ListItemUpdate:
+      type: object
+      properties:
+        quantity:
+          type: integer
+          minimum: 1
+        bought:
+          type: boolean
+    ReceiptInput:
+      type: object
+      required: [qrUrl]
+      properties:
+        qrUrl:
+          type: string
+          format: uri
+    CatalogItem:
+      allOf:
+        - $ref: "#/components/schemas/CatalogItemInput"
+        - type: object
+          required: [id, updatedAt]
+          properties:
+            id:
+              type: string
+            updatedAt:
+              type: string
+    ListItem:
+      type: object
+      required: [id, itemId, quantity, bought]
+      properties:
+        id:
+          type: string
+        itemId:
+          type: string
+        quantity:
+          type: integer
+        bought:
+          type: boolean
+        boughtAt:
+          type: [string, "null"]
+        item:
+          $ref: "#/components/schemas/CatalogItem"
+    HistoryRecord:
+      type: object
+      required: [id, itemName, emoji, purchasedAt, quantity, source]
+      properties:
+        id:
+          type: integer
+        itemName:
+          type: string
+        emoji:
+          type: string
+        purchasedAt:
+          type: string
+        priceCents:
+          type: [integer, "null"]
+        quantity:
+          type: number
+        unit:
+          type: [string, "null"]
+        supermarket:
+          type: [string, "null"]
+        source:
+          type: string
+        receiptId:
+          type: [string, "null"]
+    Receipt:
+      type: object
+      required: [id, qrUrl, importedAt, resolved]
+      properties:
+        id:
+          type: string
+        qrUrl:
+          type: string
+        supermarket:
+          type: [string, "null"]
+        issuedAt:
+          type: [string, "null"]
+        totalCents:
+          type: [integer, "null"]
+        importedAt:
+          type: string
+        resolved:
+          type: boolean
+    HouseholdState:
+      type: object
+      required: [code, catalog, list, history, receipts]
+      properties:
+        code:
+          type: string
+        catalog:
+          type: array
+          items:
+            $ref: "#/components/schemas/CatalogItem"
+        list:
+          type: array
+          items:
+            $ref: "#/components/schemas/ListItem"
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/HistoryRecord"
+        receipts:
+          type: array
+          items:
+            $ref: "#/components/schemas/Receipt"
+    ReceiptResult:
+      type: object
+      required: [receipt, message, state]
+      properties:
+        receipt:
+          $ref: "#/components/schemas/Receipt"
+        message:
+          type: string
+        state:
+          $ref: "#/components/schemas/HouseholdState"
 
