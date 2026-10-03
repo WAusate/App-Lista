@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { QueryClient, QueryClientProvider, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, Route, Switch, useLocation, useParams, Router as WouterRouter } from 'wouter';
 import { ArrowDownUp, Check, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Copy, History, Home, Minus, PackageOpen, Pencil, Plus, QrCode, Receipt, RefreshCw, Search, Share2, ShoppingBasket, Trash2, Users, X } from 'lucide-react';
+import { BrowserQRCodeReader, type IScannerControls } from '@zxing/browser';
 import { useAddListItem, useClearBought, useCreateHousehold, useCreateItem, useDeleteItem, useDeleteListItem, useGetHousehold, useJoinHousehold, useResetList, useResolveReceipt, useUpdateItem, useUpdateListItem, getGetHouseholdQueryKey } from '@workspace/api-client-react';
 import type { CatalogItem, HistoryRecord, HouseholdState, ListItem } from '@workspace/api-client-react';
 import { ErrorBoundary } from '@/components/error-boundary';
@@ -93,58 +94,108 @@ function ReceiptModal({ onClose, code }: { onClose: () => void; code: string }) 
   const [cameraMessage, setCameraMessage] = useState('');
   const [cameraActive, setCameraActive] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const scannerControlsRef = useRef<IScannerControls | null>(null);
+  const scanSessionRef = useRef(0);
   const resolve = useResolveReceipt({ request: { headers: { 'X-House-Code': code } } });
   const qc = useQueryClient();
   const stopCamera = () => {
-    const stream = videoRef.current?.srcObject as MediaStream | null;
+    scanSessionRef.current += 1;
+    scannerControlsRef.current?.stop();
+    scannerControlsRef.current = null;
+    const video = videoRef.current;
+    const stream = video?.srcObject as MediaStream | null;
     stream?.getTracks().forEach(track => track.stop());
-    if (videoRef.current) videoRef.current.srcObject = null;
+    if (video) {
+      video.pause();
+      video.srcObject = null;
+    }
     setCameraActive(false);
   };
   const openCamera = async () => {
     setCameraMessage('');
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setCameraMessage('A câmera precisa de HTTPS. Cole o endereço do QR Code abaixo.');
+    if (!window.isSecureContext) {
+      setCameraMessage('Para usar a câmera, abra o app em uma conexão segura (HTTPS). Você também pode colar o endereço do QR Code abaixo.');
       return;
     }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraMessage('Este navegador não oferece acesso à câmera. Cole o endereço do QR Code abaixo.');
+      return;
+    }
+    const video = videoRef.current;
+    if (!video) {
+      setCameraMessage('Não foi possível preparar a câmera. Feche e abra esta janela novamente.');
+      return;
+    }
+    const session = ++scanSessionRef.current;
+    setCameraActive(true);
+    setCameraMessage('Solicitando acesso à câmera…');
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } });
-      if (!videoRef.current) return;
-      videoRef.current.srcObject = stream;
-      await videoRef.current.play();
-      setCameraActive(true);
-      const Detector = (window as Window & { BarcodeDetector?: new (options?: { formats: string[] }) => { detect: (source: HTMLVideoElement) => Promise<Array<{ rawValue?: string }>> } }).BarcodeDetector;
-      if (!Detector) {
-        setCameraMessage('A leitura automática não está disponível neste navegador. Cole o endereço enquanto a câmera está aberta.');
+      const reader = new BrowserQRCodeReader();
+      const controls = await reader.decodeFromVideoDevice(undefined, video, (result, _error, controls) => {
+        if (session !== scanSessionRef.current) {
+          controls.stop();
+          return;
+        }
+        scannerControlsRef.current = controls;
+        if (result) {
+          setQrUrl(result.getText());
+          setCameraMessage('QR Code lido. Confira o endereço antes de importar.');
+          stopCamera();
+        }
+      });
+      if (session !== scanSessionRef.current) {
+        controls.stop();
         return;
       }
-      const detector = new Detector({ formats: ['qr_code'] });
-      let scanning = true;
-      const scan = async () => {
-        if (!scanning || !videoRef.current) return;
-        try {
-          const codes = await detector.detect(videoRef.current);
-          const value = codes[0]?.rawValue;
-          if (value) {
-            setQrUrl(value);
-            setCameraMessage('QR Code lido. Confira o endereço antes de importar.');
-            stopCamera();
-            scanning = false;
-            return;
-          }
-        } catch {
-          // Continue allowing manual URL entry when a frame cannot be decoded.
-        }
-        window.setTimeout(scan, 350);
-      };
-      void scan();
-    } catch {
-      setCameraMessage('Não foi possível abrir a câmera. Confira a permissão ou cole o endereço do QR Code.');
+      scannerControlsRef.current = controls;
+      setCameraMessage('Aponte a câmera para o QR Code do cupom.');
+    } catch (error) {
+      if (session !== scanSessionRef.current) return;
+      stopCamera();
+      const errorName = error instanceof Error ? error.name : '';
+      if (errorName === 'NotAllowedError' || errorName === 'PermissionDeniedError') {
+        setCameraMessage('A permissão da câmera foi negada. Autorize o acesso nas configurações do navegador ou cole o endereço do QR Code.');
+      } else if (errorName === 'NotFoundError' || errorName === 'DevicesNotFoundError') {
+        setCameraMessage('Nenhuma câmera foi encontrada neste dispositivo. Cole o endereço do QR Code abaixo.');
+      } else if (errorName === 'NotReadableError' || errorName === 'TrackStartError') {
+        setCameraMessage('A câmera está sendo usada por outro aplicativo. Feche-o e tente novamente, ou cole o endereço do QR Code.');
+      } else {
+        setCameraMessage('Não foi possível abrir a câmera. Confira a permissão do navegador ou cole o endereço do QR Code.');
+      }
     }
   };
-  useEffect(() => () => stopCamera(), []);
+  useEffect(() => () => {
+    scanSessionRef.current += 1;
+    scannerControlsRef.current?.stop();
+    scannerControlsRef.current = null;
+    const video = videoRef.current;
+    const stream = video?.srcObject as MediaStream | null;
+    stream?.getTracks().forEach(track => track.stop());
+    if (video) {
+      video.pause();
+      video.srcObject = null;
+    }
+  }, []);
   const submit = () => resolve.mutate({ data: { qrUrl } }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetHouseholdQueryKey(code) }); stopCamera(); onClose(); } });
-  return <Modal title="Importar cupom fiscal" onClose={() => { stopCamera(); onClose(); }}><div className="mb-5 rounded-2xl bg-secondary/60 p-4"><QrCode size={22} className="mb-2 text-primary" /><p className="text-sm font-bold">Escaneie o QR Code do cupom</p><p className="mt-1 text-xs leading-relaxed text-muted-foreground">Use a câmera traseira quando disponível ou cole o endereço da NFC-e.</p></div>{cameraActive && <div className="mb-4 overflow-hidden rounded-2xl border border-primary/30 bg-foreground"><video ref={videoRef} className="aspect-video w-full object-cover" muted playsInline /><button type="button" onClick={stopCamera} data-testid="button-stop-camera" className="m-3 rounded-lg bg-background/90 px-3 py-2 text-xs font-bold text-foreground">Parar câmera</button></div>}<label className="text-xs font-bold uppercase tracking-[.14em] text-muted-foreground">URL do QR Code</label><input value={qrUrl} onChange={e => setQrUrl(e.target.value)} placeholder="https://..." data-testid="input-receipt-url" className="mt-2 w-full rounded-xl border border-input bg-background px-4 py-3 text-sm outline-none focus:ring-4 focus:ring-primary/15" />{cameraMessage && <p className="mt-2 text-sm text-muted-foreground">{cameraMessage}</p>}{resolve.isError && <p className="mt-2 text-sm text-destructive">Não conseguimos ler esse cupom. Confira a URL.</p>}<div className="mt-5 flex gap-3"><button type="button" onClick={openCamera} disabled={cameraActive} data-testid="button-open-camera" className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-border py-3 text-sm font-bold disabled:opacity-50"><QrCode size={16} /> Abrir câmera</button><button type="button" disabled={resolve.isPending || !qrUrl.trim()} onClick={submit} data-testid="button-import-receipt" className="flex-1 rounded-xl bg-primary py-3 text-sm font-bold text-primary-foreground disabled:opacity-50">{resolve.isPending ? 'Lendo…' : 'Importar cupom'}</button></div></Modal>;
+  return <Modal title="Importar cupom fiscal" onClose={() => { stopCamera(); onClose(); }}>
+    <div className="mb-5 rounded-2xl bg-secondary/60 p-4">
+      <QrCode size={22} className="mb-2 text-primary" />
+      <p className="text-sm font-bold">Escaneie o QR Code do cupom</p>
+      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Use a câmera traseira quando disponível ou cole o endereço da NFC-e.</p>
+    </div>
+    <div className={`${cameraActive ? 'mb-4' : 'hidden'} overflow-hidden rounded-2xl border border-primary/30 bg-foreground`}>
+      <video ref={videoRef} className="aspect-video w-full object-cover" muted playsInline />
+      <button type="button" onClick={stopCamera} data-testid="button-stop-camera" className="m-3 rounded-lg bg-background/90 px-3 py-2 text-xs font-bold text-foreground">Parar câmera</button>
+    </div>
+    <label className="text-xs font-bold uppercase tracking-[.14em] text-muted-foreground">URL do QR Code</label>
+    <input value={qrUrl} onChange={e => setQrUrl(e.target.value)} placeholder="https://..." data-testid="input-receipt-url" className="mt-2 w-full rounded-xl border border-input bg-background px-4 py-3 text-sm outline-none focus:ring-4 focus:ring-primary/15" />
+    {cameraMessage && <p className="mt-2 text-sm text-muted-foreground">{cameraMessage}</p>}
+    {resolve.isError && <p className="mt-2 text-sm text-destructive">Não conseguimos ler esse cupom. Confira a URL.</p>}
+    <div className="mt-5 flex gap-3">
+      <button type="button" onClick={openCamera} disabled={cameraActive} data-testid="button-open-camera" className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-border py-3 text-sm font-bold disabled:opacity-50"><QrCode size={16} /> Abrir câmera</button>
+      <button type="button" disabled={resolve.isPending || !qrUrl.trim()} onClick={submit} data-testid="button-import-receipt" className="flex-1 rounded-xl bg-primary py-3 text-sm font-bold text-primary-foreground disabled:opacity-50">{resolve.isPending ? 'Lendo…' : 'Importar cupom'}</button>
+    </div>
+  </Modal>;
 }
 
 type ItemDraft = { name: string; category: string; emoji: string; defaultQty: number; unit: string; note: string };
