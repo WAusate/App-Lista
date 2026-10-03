@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider, useMutation, useQueryClient } from '@
 import { Link, Route, Switch, useLocation, useParams, Router as WouterRouter } from 'wouter';
 import { ArrowDownUp, Check, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Copy, History, Home, Minus, PackageOpen, Pencil, Plus, QrCode, Receipt, RefreshCw, Search, Share2, ShoppingBasket, Trash2, Users, X } from 'lucide-react';
 import { BrowserQRCodeReader, type IScannerControls } from '@zxing/browser';
+import { DecodeHintType } from '@zxing/library';
 import { useAddListItem, useClearBought, useCreateHousehold, useCreateItem, useDeleteItem, useDeleteListItem, useGetHousehold, useJoinHousehold, useResetList, useResolveReceipt, useUpdateItem, useUpdateListItem, getGetHouseholdQueryKey } from '@workspace/api-client-react';
 import type { CatalogItem, HistoryRecord, HouseholdState, ListItem } from '@workspace/api-client-react';
 import { ErrorBoundary } from '@/components/error-boundary';
@@ -130,8 +131,18 @@ function ReceiptModal({ onClose, code }: { onClose: () => void; code: string }) 
     setCameraActive(true);
     setCameraMessage('Solicitando acesso à câmera…');
     try {
-      const reader = new BrowserQRCodeReader();
-      const controls = await reader.decodeFromVideoDevice(undefined, video, (result, _error, controls) => {
+      const reader = new BrowserQRCodeReader(
+        new Map([[DecodeHintType.TRY_HARDER, true]]),
+        { delayBetweenScanAttempts: 250, delayBetweenScanSuccess: 250 },
+      );
+      const controls = await reader.decodeFromConstraints({
+        audio: false,
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
+      }, video, (result, scanError, controls) => {
         if (session !== scanSessionRef.current) {
           controls.stop();
           return;
@@ -140,6 +151,9 @@ function ReceiptModal({ onClose, code }: { onClose: () => void; code: string }) 
         if (result) {
           setQrUrl(result.getText());
           setCameraMessage('QR Code lido. Confira o endereço antes de importar.');
+          stopCamera();
+        } else if (scanError && !['NotFoundException', 'ChecksumException', 'FormatException'].includes(scanError.getKind())) {
+          setCameraMessage('A leitura foi interrompida pelo navegador. Feche e abra a câmera novamente, ou cole o endereço do QR Code.');
           stopCamera();
         }
       });
@@ -187,6 +201,7 @@ function ReceiptModal({ onClose, code }: { onClose: () => void; code: string }) 
       <video ref={videoRef} className="aspect-video w-full object-cover" muted playsInline />
       <button type="button" onClick={stopCamera} data-testid="button-stop-camera" className="m-3 rounded-lg bg-background/90 px-3 py-2 text-xs font-bold text-foreground">Parar câmera</button>
     </div>
+    {cameraActive && <p className="mb-3 text-xs leading-relaxed text-muted-foreground">Centralize o QR Code, aproxime até ficar nítido e mantenha o celular firme, com boa iluminação e sem reflexos.</p>}
     <label className="text-xs font-bold uppercase tracking-[.14em] text-muted-foreground">URL do QR Code</label>
     <input value={qrUrl} onChange={e => setQrUrl(e.target.value)} placeholder="https://..." data-testid="input-receipt-url" className="mt-2 w-full rounded-xl border border-input bg-background px-4 py-3 text-sm outline-none focus:ring-4 focus:ring-primary/15" />
     {cameraMessage && <p className="mt-2 text-sm text-muted-foreground">{cameraMessage}</p>}
