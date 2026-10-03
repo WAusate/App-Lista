@@ -94,6 +94,13 @@ function ReceiptModal({ onClose, code }: { onClose: () => void; code: string }) 
   const [qrUrl, setQrUrl] = useState('');
   const [cameraMessage, setCameraMessage] = useState('');
   const [cameraActive, setCameraActive] = useState(false);
+  const [importOutcome, setImportOutcome] = useState<{
+    message: string;
+    importedCount: number;
+    resolved: boolean;
+    supermarket?: string | null;
+    totalCents?: number | null;
+  } | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const scannerControlsRef = useRef<IScannerControls | null>(null);
   const scanSessionRef = useRef(0);
@@ -190,12 +197,40 @@ function ReceiptModal({ onClose, code }: { onClose: () => void; code: string }) 
       video.srcObject = null;
     }
   }, []);
-  const submit = () => resolve.mutate({ data: { qrUrl } }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetHouseholdQueryKey(code) }); stopCamera(); onClose(); } });
-  return <Modal title="Importar cupom fiscal" onClose={() => { stopCamera(); onClose(); }}>
+  const submit = () => resolve.mutate({ data: { qrUrl } }, {
+    onSuccess: (result) => {
+      const importedCount = result.state.history.filter(record => record.receiptId === result.receipt.id).length;
+      qc.setQueryData(getGetHouseholdQueryKey(code), result.state);
+      setImportOutcome({
+        message: result.message,
+        importedCount,
+        resolved: result.receipt.resolved,
+        supermarket: result.receipt.supermarket,
+        totalCents: result.receipt.totalCents,
+      });
+      stopCamera();
+    },
+  });
+  return <Modal title={importOutcome ? 'Importação concluída' : 'Importar cupom fiscal'} onClose={() => { stopCamera(); onClose(); }}>
+    {importOutcome ? <div className="space-y-5">
+      <div className="rounded-2xl bg-secondary/60 p-4">
+        <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary"><Check size={22} /></div>
+        <p className="font-bold">{importOutcome.importedCount ? 'Produtos registrados no Histórico' : importOutcome.resolved ? 'Cupom salvo com dados parciais' : 'Cupom salvo, sem itens detalhados'}</p>
+        <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{importOutcome.message}</p>
+        {importOutcome.importedCount > 0
+          ? <p className="mt-3 text-sm font-medium">{importOutcome.importedCount} {importOutcome.importedCount === 1 ? 'produto foi registrado' : 'produtos foram registrados'} no Histórico. Eles não são adicionados à lista atual de compras.</p>
+          : <p className="mt-3 text-sm font-medium">O endereço foi salvo, mas nenhum produto foi extraído para o Histórico ou para a lista de compras.</p>}
+        {(importOutcome.supermarket || importOutcome.totalCents != null) && <p className="mt-2 text-xs text-muted-foreground">{[importOutcome.supermarket, importOutcome.totalCents != null ? (importOutcome.totalCents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : null].filter(Boolean).join(' · ')}</p>}
+      </div>
+      <div className="flex gap-3">
+        <Link href="/history" onClick={onClose} className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-bold text-primary-foreground"><History size={16} /> Ver histórico</Link>
+        <button type="button" onClick={onClose} className="flex-1 rounded-xl border border-border py-3 text-sm font-bold">Fechar</button>
+      </div>
+    </div> : <>
     <div className="mb-5 rounded-2xl bg-secondary/60 p-4">
       <QrCode size={22} className="mb-2 text-primary" />
       <p className="text-sm font-bold">Escaneie o QR Code do cupom</p>
-      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Use a câmera traseira quando disponível ou cole o endereço da NFC-e.</p>
+      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Use a câmera traseira quando disponível ou cole o endereço da NFC-e. Os produtos encontrados ficam no Histórico, não na lista atual de compras.</p>
     </div>
     <div className={`${cameraActive ? 'mb-4' : 'hidden'} overflow-hidden rounded-2xl border border-primary/30 bg-foreground`}>
       <video ref={videoRef} className="aspect-video w-full object-cover" muted playsInline />
@@ -205,11 +240,13 @@ function ReceiptModal({ onClose, code }: { onClose: () => void; code: string }) 
     <label className="text-xs font-bold uppercase tracking-[.14em] text-muted-foreground">URL do QR Code</label>
     <input value={qrUrl} onChange={e => setQrUrl(e.target.value)} placeholder="https://..." data-testid="input-receipt-url" className="mt-2 w-full rounded-xl border border-input bg-background px-4 py-3 text-sm outline-none focus:ring-4 focus:ring-primary/15" />
     {cameraMessage && <p className="mt-2 text-sm text-muted-foreground">{cameraMessage}</p>}
-    {resolve.isError && <p className="mt-2 text-sm text-destructive">Não conseguimos ler esse cupom. Confira a URL.</p>}
+    {resolve.isPending && <p role="status" aria-live="polite" className="mt-2 text-sm text-muted-foreground">Consultando os dados da NFC-e. Pode levar alguns segundos; não feche esta janela.</p>}
+    {resolve.isError && <p role="alert" className="mt-2 text-sm text-destructive">Não foi possível importar. Confira se o endereço é de uma página fiscal da NFC-e e tente novamente.</p>}
     <div className="mt-5 flex gap-3">
       <button type="button" onClick={openCamera} disabled={cameraActive} data-testid="button-open-camera" className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-border py-3 text-sm font-bold disabled:opacity-50"><QrCode size={16} /> Abrir câmera</button>
-      <button type="button" disabled={resolve.isPending || !qrUrl.trim()} onClick={submit} data-testid="button-import-receipt" className="flex-1 rounded-xl bg-primary py-3 text-sm font-bold text-primary-foreground disabled:opacity-50">{resolve.isPending ? 'Lendo…' : 'Importar cupom'}</button>
+      <button type="button" disabled={resolve.isPending || !qrUrl.trim()} onClick={submit} data-testid="button-import-receipt" className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-bold text-primary-foreground disabled:opacity-50">{resolve.isPending && <RefreshCw size={15} className="animate-spin" />}{resolve.isPending ? 'Importando…' : 'Importar cupom'}</button>
     </div>
+    </>}
   </Modal>;
 }
 
